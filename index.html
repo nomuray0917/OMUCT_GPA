@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ultimate GPA Calculator</title>
+    <link rel="stylesheet" href="https://pyscript.net/releases/2024.1.1/core.css" />
+    <script type="module" src="https://pyscript.net/releases/2024.1.1/core.js"></script>
+
+    <style>
+        body { font-family: "Helvetica Neue", Arial, sans-serif; max-width: 700px; margin: 0 auto; padding: 20px; background-color: #f0f2f5; color: #333; }
+        h1 { text-align: center; color: #1a73e8; margin-bottom: 20px; }
+        
+        .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        
+        .form-row { display: flex; gap: 10px; margin-bottom: 15px; }
+        .form-group { flex: 1; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; font-size: 0.85rem; color: #555; }
+        input { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; }
+        
+        /* ボタン類 */
+        .btn { width: 100%; padding: 12px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        .btn-primary { background-color: #1a73e8; color: white; }
+        .btn-primary:hover { background-color: #1557b0; }
+        
+        /* ツールボタン（横並び用） */
+        .tool-btn-group { display: flex; gap: 10px; margin: 10px 0; }
+        .btn-outline { background-color: white; color: #1a73e8; border: 2px solid #1a73e8; padding: 8px; font-size: 0.9rem; flex: 1; }
+        .btn-outline:hover { background-color: #e8f0fe; }
+        .btn-json { background-color: #28a745; color: white; padding: 8px; font-size: 0.9rem; flex: 1; }
+        .btn-json:hover { background-color: #218838; }
+        
+        .gpa-value { font-size: 3rem; font-weight: 800; color: #1a73e8; text-align: center; margin: 10px 0; }
+        
+        /* コメントエリア */
+        .comment-box { background: #e3f2fd; border-left: 5px solid #2196f3; padding: 15px; border-radius: 4px; margin-top: 20px; display: none; }
+        .comment-title { font-weight: bold; color: #1565c0; margin-bottom: 5px; }
+        .comment-text { font-size: 0.95rem; line-height: 1.6; white-space: pre-wrap; }
+
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 0.9rem; }
+        th { background: #f8f9fa; padding: 10px; text-align: left; border-bottom: 2px solid #ddd;}
+        td { padding: 10px; border-bottom: 1px solid #eee; }
+        
+        .file-area { border-top: 1px dashed #ccc; padding-top: 15px; margin-top: 15px; }
+        .loading { text-align: center; color: #666; font-size: 0.8rem; margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+
+    <h1>🎓 GPA Calculator</h1>
+    <div class="loading" id="loader">システム起動中...</div>
+
+    <div class="card">
+        <div class="form-group" style="margin-bottom: 10px;">
+            <label>科目名</label>
+            <input type="text" id="input_name" placeholder="例: プログラミング1">
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>点数</label>
+                <input type="number" id="input_score" placeholder="85">
+            </div>
+            <div class="form-group">
+                <label>単位数</label>
+                <input type="number" id="input_credits" placeholder="2">
+            </div>
+        </div>
+        <button id="add_btn" class="btn btn-primary">科目を追加</button>
+
+        <div class="file-area">
+            <label>📂 データ操作</label>
+            <div class="tool-btn-group">
+                <button id="dl_template_btn" class="btn btn-outline">📄 CSV雛形DL</button>
+                <button id="json_btn" class="btn btn-json">💾 JSON保存</button>
+            </div>
+            <div style="margin-top: 10px;">
+                <label style="font-weight: normal; font-size: 0.8rem;">CSVファイルを読み込む:</label>
+                <input type="file" id="csv_upload" accept=".csv" style="font-size: 0.9rem;">
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div style="text-align: center; color: #666;">現在のGPA</div>
+        <div id="gpa_result" class="gpa-value">0.00</div>
+
+        <div id="comment_area" class="comment-box">
+            <div class="comment-title">📊 分析レポート</div>
+            <div id="comment_text" class="comment-text"></div>
+        </div>
+
+        <table>
+            <thead><tr><th>科目名</th><th>点数</th><th>GP</th></tr></thead>
+            <tbody id="history_table"></tbody>
+        </table>
+        
+        <div style="text-align: right; margin-top: 10px;">
+            <button id="clear_btn" style="background:#666; color:white; border:none; padding:5px 10px; border-radius:4px; cursor:pointer;">リセット</button>
+        </div>
+    </div>
+
+    <script type="py">
+        from pyscript import document
+        from js import Blob, URL, document as js_document
+        import random
+        import io
+        import csv
+        import json
+        from pyodide.ffi import create_proxy
+
+        course_history = []
+
+        # --- ランダムコメント生成 ---
+        def get_random_comment(gpa, total_credits):
+            if total_credits == 0:
+                return "科目を入力して、解析を開始してください。"
+
+            if gpa >= 3.5:
+                candidates = [
+                    f"やりますねぇ！（GPA {gpa:.2f}）",
+                    f"王道を征く、GPA系。",
+                    f"おっ、大丈夫か？（成績優秀すぎて）大丈夫だ問題ない。",
+                    f"イキスギィ！",
+                    f"あぁ^～たまらねぇぜ。（高成績）"
+                ]
+            elif gpa >= 3.0:
+                candidates = [
+                    f"いいよ！来いよ！（GPA {gpa:.2f}）",
+                    f"ンアッー!",
+                    f"114514点（嘘）",
+                    f"おい、待てい（江戸っ子）。なかなかやるじゃないか。"
+                ]
+            elif gpa >= 2.0:
+                candidates = [
+                    f"まあ多少はね？（GPA {gpa:.2f}）",
+                    f"そうだよ（便乗）",
+                    f"オォン!アォン!",
+                    f"ん？今なんでもするって言ったよね？"
+                ]
+            else:
+                candidates = [
+                    f"まずいですよ！（GPA {gpa:.2f}）",
+                    f"これもうわかんねぇな",
+                    f"落ちろ！...落ちたな（単位）",
+                    f"馬鹿野郎お前俺は勝つぞお前（再履修）",
+                    f"やめてくれよ...（懇願）"
+                    f"†悔い改めて†"
+                ]
+            return random.choice(candidates)
+
+        # --- GP計算と画面更新 ---
+        def get_gp(score):
+            if score >= 90: return 4
+            elif score >= 80: return 3
+            elif score >= 70: return 2
+            elif score >= 60: return 1
+            else: return 0
+
+        def update_display():
+            table_body = document.querySelector("#history_table")
+            table_body.innerHTML = ""
+            total_gp_x_credits = 0
+            total_credits = 0
+            for course in course_history:
+                table_body.innerHTML += f"<tr><td>{course['name']}</td><td>{course['score']}</td><td>{course['gp']}</td></tr>"
+                total_gp_x_credits += course['gp'] * course['credits']
+                total_credits += course['credits']
+            
+            gpa = total_gp_x_credits / total_credits if total_credits > 0 else 0.0
+            
+            document.querySelector("#gpa_result").innerText = f"{gpa:.2f}"
+            
+            comment = get_random_comment(gpa, total_credits)
+            document.querySelector("#comment_text").innerText = comment
+            document.querySelector("#comment_area").style.display = "block"
+
+        def add_single_course(event):
+            name = document.querySelector("#input_name").value
+            score_val = document.querySelector("#input_score").value
+            credits_val = document.querySelector("#input_credits").value
+            if not score_val or not credits_val: return
+            score = float(score_val)
+            credits = float(credits_val)
+            if not name: name = f"科目{len(course_history)+1}"
+            course_history.append({"name": name, "score": score, "credits": credits, "gp": get_gp(score)})
+            update_display()
+            
+            document.querySelector("#input_name").value = ""
+            document.querySelector("#input_score").value = ""
+            document.querySelector("#input_credits").value = ""
+            document.querySelector("#input_name").focus()
+
+        def clear_history(event):
+            course_history.clear()
+            update_display()
+            document.querySelector("#comment_area").style.display = "none"
+            document.querySelector("#csv_upload").value = ""
+
+        # --- ファイル操作機能 ---
+        
+        # 1. CSV雛形ダウンロード
+        def download_template(event):
+            csv_content = "\ufeff科目名,点数,単位数\n数学A,90,2\n英語B,85,1\n物理実験,78,1"
+            blob = Blob.new([csv_content], {type: "text/csv"})
+            url = URL.createObjectURL(blob)
+            link = js_document.createElement("a")
+            link.href = url
+            link.download = "template.csv"
+            link.click()
+            URL.revokeObjectURL(url)
+
+        # 2. JSON保存 (機能復帰！)
+        def download_json(event):
+            if not course_history:
+                from pyscript import window
+                window.alert("保存するデータがありません。")
+                return
+            
+            # JSON変換
+            json_str = json.dumps(course_history, ensure_ascii=False, indent=2)
+            blob = Blob.new([json_str], {type: "application/json"})
+            url = URL.createObjectURL(blob)
+            
+            link = js_document.createElement("a")
+            link.href = url
+            link.download = "my_gpa_data.json"
+            link.click()
+            URL.revokeObjectURL(url)
+
+        # 3. CSV読み込み
+        async def process_csv(event):
+            file_input = event.target
+            if not file_input.files: return
+            file = file_input.files.item(0)
+            content = await file.text()
+            f = io.StringIO(content)
+            reader = csv.reader(f)
+            try:
+                next(reader)
+                for row in reader:
+                    if len(row) < 3: continue
+                    name = row[0].strip()
+                    score = float(row[1])
+                    credits = float(row[2])
+                    course_history.append({"name": name, "score": score, "credits": credits, "gp": get_gp(score)})
+                update_display()
+            except Exception:
+                pass
+
+        # イベント登録
+        document.querySelector("#add_btn").onclick = add_single_course
+        document.querySelector("#clear_btn").onclick = clear_history
+        document.querySelector("#dl_template_btn").onclick = download_template
+        document.querySelector("#json_btn").onclick = download_json # 紐付け復帰
+        
+        upload_element = document.querySelector("#csv_upload")
+        upload_proxy = create_proxy(process_csv)
+        upload_element.addEventListener("change", upload_proxy)
+
+        document.querySelector("#loader").style.display = "none"
+    </script>
+</body>
+</html>
