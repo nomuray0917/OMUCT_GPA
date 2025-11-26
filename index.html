@@ -27,15 +27,17 @@
         .tool-btn-group { display: flex; gap: 10px; margin: 10px 0; }
         .btn-outline { background-color: white; color: #1a73e8; border: 2px solid #1a73e8; padding: 8px; font-size: 0.9rem; flex: 1; }
         .btn-outline:hover { background-color: #e8f0fe; }
-        .btn-json { background-color: #28a745; color: white; padding: 8px; font-size: 0.9rem; flex: 1; }
-        .btn-json:hover { background-color: #218838; }
+        
+        /* CSV保存ボタンのスタイル (緑色) */
+        .btn-csv { background-color: #28a745; color: white; padding: 8px; font-size: 0.9rem; flex: 1; }
+        .btn-csv:hover { background-color: #218838; }
         
         .gpa-value { font-size: 3rem; font-weight: 800; color: #1a73e8; text-align: center; margin: 10px 0; }
         
         /* コメントエリア */
         .comment-box { background: #e3f2fd; border-left: 5px solid #2196f3; padding: 15px; border-radius: 4px; margin-top: 20px; display: none; }
         .comment-title { font-weight: bold; color: #1565c0; margin-bottom: 5px; }
-        .comment-text { font-size: 0.95rem; line-height: 1.6; white-space: pre-wrap; }
+        .comment-text { font-size: 0.95rem; line-height: 1.6; white-space: pre-wrap; font-weight: bold; }
 
         table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 0.9rem; }
         th { background: #f8f9fa; padding: 10px; text-align: left; border-bottom: 2px solid #ddd;}
@@ -47,7 +49,7 @@
 </head>
 <body>
 
-    <h1>🎓 GPA Calculator</h1>
+    <h1>🎓 OMUCT GPA Calculator</h1>
     <div class="loading" id="loader">システム起動中...</div>
 
     <div class="card">
@@ -71,7 +73,7 @@
             <label>📂 データ操作</label>
             <div class="tool-btn-group">
                 <button id="dl_template_btn" class="btn btn-outline">📄 CSV雛形DL</button>
-                <button id="json_btn" class="btn btn-json">💾 JSON保存</button>
+                <button id="csv_save_btn" class="btn btn-csv">💾 CSV保存</button>
             </div>
             <div style="margin-top: 10px;">
                 <label style="font-weight: normal; font-size: 0.8rem;">CSVファイルを読み込む:</label>
@@ -105,7 +107,6 @@
         import random
         import io
         import csv
-        import json
         from pyodide.ffi import create_proxy
 
         course_history = []
@@ -219,21 +220,34 @@
             link.click()
             URL.revokeObjectURL(url)
 
-        # 2. JSON保存 (機能復帰！)
-        def download_json(event):
+        # 2. CSV保存機能 (ここを追加！)
+        def download_csv_data(event):
             if not course_history:
                 from pyscript import window
                 window.alert("保存するデータがありません。")
                 return
             
-            # JSON変換
-            json_str = json.dumps(course_history, ensure_ascii=False, indent=2)
-            blob = Blob.new([json_str], {type: "application/json"})
-            url = URL.createObjectURL(blob)
+            # StringIOを使ってCSV文字列を作成
+            output = io.StringIO()
+            # BOM (\ufeff) を付けてExcelの文字化けを防ぐ
+            output.write("\ufeff")
+            writer = csv.writer(output)
             
+            # ヘッダー
+            writer.writerow(["科目名", "点数", "単位数"])
+            
+            # データ行
+            for course in course_history:
+                writer.writerow([course['name'], course['score'], course['credits']])
+            
+            csv_content = output.getvalue()
+            
+            # ダウンロード処理
+            blob = Blob.new([csv_content], {type: "text/csv"})
+            url = URL.createObjectURL(blob)
             link = js_document.createElement("a")
             link.href = url
-            link.download = "my_gpa_data.json"
+            link.download = "my_gpa_data.csv"
             link.click()
             URL.revokeObjectURL(url)
 
@@ -261,7 +275,8 @@
         document.querySelector("#add_btn").onclick = add_single_course
         document.querySelector("#clear_btn").onclick = clear_history
         document.querySelector("#dl_template_btn").onclick = download_template
-        document.querySelector("#json_btn").onclick = download_json # 紐付け復帰
+        # 保存ボタンの紐付けをCSV保存に変更
+        document.querySelector("#csv_save_btn").onclick = download_csv_data
         
         upload_element = document.querySelector("#csv_upload")
         upload_proxy = create_proxy(process_csv)
